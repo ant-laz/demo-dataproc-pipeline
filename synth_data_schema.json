@@ -1,0 +1,5 @@
+{
+    "id": {{integer(0,1000)}},
+    "name": "{{uuid()}}",
+    "isInStock": {{bool()}}
+  }
