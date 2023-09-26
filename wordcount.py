@@ -3,6 +3,14 @@
 # from tutorial here
 # https://cloud.google.com/dataproc/docs/tutorials/gcs-connector-spark-tutorial
 
+# This example uses the legacy RDD spark programming interface
+# RDD = Resilient Distributed Dataset 
+# The newer & more performance spark programming interface is called Dataset
+# docs on RDD
+# https://spark.apache.org/docs/latest/rdd-programming-guide.html
+# docs on Dataset
+# https://spark.apache.org/docs/latest/sql-programming-guide.html
+
 import pyspark
 import sys
 
