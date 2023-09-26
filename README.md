@@ -246,8 +246,19 @@ gcloud dataproc clusters create ${DEMO_NAME}-1 \
     --single-node
 ```
 
+Using legacy RDD programming API
+
 ```sh
-gcloud dataproc jobs submit pyspark wordcount.py \
+gcloud dataproc jobs submit pyspark rdd_read_text_from_gcs.py \
+    --cluster=${DEMO_NAME}-1 \
+    --region=${GCP_REGION} \
+    -- gs://${GCS_BUCKET_NO_PREFIX}/input/ gs://${GCS_BUCKET_NO_PREFIX}/output/
+```
+
+Using newer Dataset API
+
+```sh
+gcloud dataproc jobs submit pyspark dataset_read_json_from_gcs.py \
     --cluster=${DEMO_NAME}-1 \
     --region=${GCP_REGION} \
     -- gs://${GCS_BUCKET_NO_PREFIX}/input/ gs://${GCS_BUCKET_NO_PREFIX}/output/
