@@ -134,6 +134,47 @@ Next create authentication details for your Google account
 gcloud auth application-default login
 ```
 
+### cloudsql instance creation
+
+https://cloud.google.com/sql/docs/mysql/create-instance#gcloud
+
+```sh
+gcloud sql instances create ${DEMO_NAME} \
+--database-version=MYSQL_8_0 \
+--cpu=2 \
+--memory=7680MB \
+--region=${GCP_REGION}
+```
+
+connect to this database
+
+```sh
+gcloud sql connect ${DEMO_NAME} --user=root --quiet
+```
+
+create a database
+
+```sh
+CREATE DATABASE guestbook;
+```
+
+create a table in this database & insert some data into the table
+
+```sh
+USE guestbook;
+CREATE TABLE entries (guestName VARCHAR(255), content VARCHAR(255),
+    entryID INT NOT NULL AUTO_INCREMENT, PRIMARY KEY(entryID));
+    INSERT INTO entries (guestName, content) values ("first guest", "I got here!");
+INSERT INTO entries (guestName, content) values ("second guest", "Me too!");
+```
+
+check the newly created data is in the table
+
+```sh
+SELECT * FROM entries;
+```
+
+
 ## Cerating synthetic pub/sub messages for the simulation
 
 This google provided template is used to create fake data.
@@ -214,7 +255,22 @@ gcloud dataproc jobs submit pyspark wordcount.py \
 
 ## PySpark to read from & write to MySQL deployed on CloudSQL
 
-see wordcount.py
+https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/cloud-sql-proxy#using-this-initialization-action-without-configuring-hive-metastore
+
+```sh
+gcloud dataproc clusters create ${DEMO_NAME}-2 \
+    --region ${GCP_REGION} \
+    --scopes sql-admin \
+    --initialization-actions gs://goog-dataproc-initialization-actions-${GCP_REGION}/cloud-sql-proxy/cloud-sql-proxy.sh \
+    --metadata "enable-cloud-sql-hive-metastore=false" \
+    --metadata "additional-cloud-sql-instances=${GCP_PROJECT_ID}:${GCP_REGION}:${DEMO_NAME}"
+```
+
+```sh
+gcloud dataproc jobs submit pyspark mysqlcount.py \
+    --cluster=${DEMO_NAME}-2 \
+    --region=${GCP_REGION}
+```
 
 ## Cloud Composer - trigger every 5 mins
 
