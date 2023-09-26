@@ -34,6 +34,23 @@ export TS_FORMAT=%Y-%m-%dT%H:%M:%SZ
 export PUB_SUB_SA="service-${GCP_PROJECT_NUM}@gcp-sa-pubsub.iam.gserviceaccount.com"
 ```
 
+### enable GCP product apis
+
+check which apis are currently enabled for your project by running
+
+```sh
+gcloud services list --enabled
+```
+
+If required, enable the dataproc, compute engine & cloud storage APIs
+
+```sh
+gcloud services enable dataproc.googleapis.com
+gcloud services enable compute.googleapis.com
+gcloud services enable storage-component.googleapis.com
+```
+
+
 ### pubsub topic
 
 Our pipeline starts with a stream of messages in pub/sub so let's create a topic.
@@ -98,6 +115,15 @@ gcloud pubsub subscriptions create ${GCS_PUB_SUB_SUBSCRIPTION} \
 --cloud-storage-max-duration=1m \
 --cloud-storage-output-format=text \
 --cloud-storage-write-metadata
+```
+
+### dataproc cluster creation
+
+```sh
+gcloud dataproc clusters create ${DEMO_NAME} \
+    --project=${GCP_PROJECT_ID} \
+    --region=${GCP_REGION} \
+    --single-node
 ```
 
 ### authentication
@@ -172,11 +198,23 @@ https://cloud.google.com/pubsub/docs/monitor-subscription
 
 ## PySpark to read from & write to files on GCS
 
-TODO
+```sh
+gcloud dataproc clusters create ${DEMO_NAME}-1 \
+    --project=${GCP_PROJECT_ID} \
+    --region=${GCP_REGION} \
+    --single-node
+```
+
+```sh
+gcloud dataproc jobs submit pyspark wordcount.py \
+    --cluster=${DEMO_NAME}-1 \
+    --region=${GCP_REGION} \
+    -- gs://${GCS_BUCKET_NO_PREFIX}/input/ gs://${GCS_BUCKET_NO_PREFIX}/output/
+```
 
 ## PySpark to read from & write to MySQL deployed on CloudSQL
 
-TODO
+see wordcount.py
 
 ## Cloud Composer - trigger every 5 mins
 
