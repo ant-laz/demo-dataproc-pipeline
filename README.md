@@ -109,10 +109,9 @@ Finally, execute this command to create the Cloud Storage Subscription.
 gcloud pubsub subscriptions create ${GCS_PUB_SUB_SUBSCRIPTION} \
 --topic=${PUB_SUB_TOPIC} \
 --cloud-storage-bucket=${GCS_BUCKET_NO_PREFIX} \
---cloud-storage-file-prefix=demogcsprefix \
---cloud-storage-file-suffix=demogcssuffix \
---cloud-storage-max-bytes=10MB \
---cloud-storage-max-duration=1m \
+--cloud-storage-file-prefix=shikharorder \
+--cloud-storage-file-suffix=.jsonl \
+--cloud-storage-max-duration=5m \
 --cloud-storage-output-format=text \
 --cloud-storage-write-metadata
 ```
@@ -184,12 +183,12 @@ https://cloud.google.com/dataflow/docs/guides/templates/provided/streaming-data-
 As we are generating pub/sub messages a JSON schema needs to be provided.
 
 ```js
-{
-  "id": {{integer(0,1000)}},
-  "name": "{{uuid()}}",
-  "isInStock": {{bool()}}
-}
+{"id": {{integer(0,1000)}},"name": "{{uuid()}}","isInStock": {{bool()}}}
 ```
+
+Note how the JSON is all one 1 line, this is so when we batch messages together in
+a single file we can have a file in (jsonlines)[https://jsonlines.org/] format
+
 Next upload our JSON schema into the GCS bucket
 
 ```sh
@@ -208,7 +207,7 @@ topic=${PUB_SUB_TOPIC},\
 schemaLocation=${GCS_BUCKET}/synth_data_schema.json,\
 outputType=JSON,\
 qps=5,\
-messagesLimit=10
+messagesLimit=100
 ```
 
 ## Check pub/sub message creation
@@ -260,8 +259,7 @@ Using newer Dataset API
 ```sh
 gcloud dataproc jobs submit pyspark dataset_read_json_from_gcs.py \
     --cluster=${DEMO_NAME}-1 \
-    --region=${GCP_REGION} \
-    -- gs://${GCS_BUCKET_NO_PREFIX}/input/ gs://${GCS_BUCKET_NO_PREFIX}/output/
+    --region=${GCP_REGION}
 ```
 
 ## PySpark to read from & write to MySQL deployed on CloudSQL
@@ -278,7 +276,7 @@ gcloud dataproc clusters create ${DEMO_NAME}-2 \
 ```
 
 ```sh
-gcloud dataproc jobs submit pyspark mysqlcount.py \
+gcloud dataproc jobs submit pyspark dataset_read_from_cloudsql_mysql.py \
     --cluster=${DEMO_NAME}-2 \
     --region=${GCP_REGION}
 ```
