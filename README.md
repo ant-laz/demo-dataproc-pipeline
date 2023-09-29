@@ -1,6 +1,18 @@
 # demo-dataproc-pipeline
 
-## GCP Infra creation
+## 0 GCP Infra creation
+
+### 0.0 check gcloud is on the right project
+
+```sh
+gcloud config configurations list
+```
+
+```sh
+gcloud config configurations activate ${name_of_config}
+```
+
+### 0.1 Environmetal variables
 
 To help build GCP infra, Create some evironmental variables as follows.
 
@@ -32,9 +44,23 @@ export EMAIL_ADDRESS=alazzaro@google.com
 export TS_FORMAT=%Y-%m-%dT%H:%M:%SZ
 
 export PUB_SUB_SA="service-${GCP_PROJECT_NUM}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+export MYSQL_MVN_GROUP_ID="mysql"
+
+export MYSQL_MVN_ARTIFACT="mysql-connector-java"
+
+export MYSQL_MVN_VERSION="8.0.32"
+
+export JDBC_JAR="gs://python-lab-329118-demo-dataproc-pipeline/mysql-connector-j-8.1.0.jar"
+
+export CSQL_JAR="gs://python-lab-329118-demo-dataproc-pipeline/mysql-socket-factory-1.13.1.jar"
+
+export DB_USER="anthony"
+
+export DB_PASS="p#EQN65z\E(:,sv:"
 ```
 
-### enable GCP product apis
+### 0.2 enable GCP product apis
 
 check which apis are currently enabled for your project by running
 
@@ -51,7 +77,7 @@ gcloud services enable storage-component.googleapis.com
 ```
 
 
-### pubsub topic
+### 0.3 create pubsub topic
 
 Our pipeline starts with a stream of messages in pub/sub so let's create a topic.
 
@@ -59,7 +85,7 @@ Our pipeline starts with a stream of messages in pub/sub so let's create a topic
 gcloud pubsub topics create ${PUB_SUB_TOPIC}
 ```
 
-### gcs bucket
+### 0.4 create gcs bucket
 
 These pub/sub messages will be batched into files on GCS, so let's create a bucket.
 
@@ -70,7 +96,7 @@ gcloud storage buckets create ${GCS_BUCKET} \
   --uniform-bucket-level-access
 ```
 
-### pubsub debug subscription
+### 0.5 create pubsub debug subscription
 
 Create a subscription to this topic for debugging purposes
 ```sh
@@ -79,7 +105,7 @@ gcloud pubsub subscriptions create ${DEBUG_PUB_SUB_SUBSCRIPTION} \
 --retain-acked-messages
 ```
 
-### pubsub cloud storage subscription
+### 0.6 pubsub cloud storage subscription
 
 Create a Cloud Storage [subscription](https://cloud.google.com/pubsub/docs/create-cloudstorage-subscription#pubsub_create_cloudstorage_subscription-gcloud)
 to consume pub/sub messages, batch them & write their contents as files on GCS.
@@ -116,7 +142,7 @@ gcloud pubsub subscriptions create ${GCS_PUB_SUB_SUBSCRIPTION} \
 --cloud-storage-write-metadata
 ```
 
-### dataproc cluster creation
+### 0.7 dataproc cluster creation
 
 ```sh
 gcloud dataproc clusters create ${DEMO_NAME} \
@@ -125,7 +151,7 @@ gcloud dataproc clusters create ${DEMO_NAME} \
     --single-node
 ```
 
-### authentication
+### 0.8 authentication
 
 Next create authentication details for your Google account
 
@@ -133,7 +159,7 @@ Next create authentication details for your Google account
 gcloud auth application-default login
 ```
 
-### cloudsql instance creation
+### 0.9 cloudsql instance creation
 
 https://cloud.google.com/sql/docs/mysql/create-instance#gcloud
 
@@ -174,7 +200,7 @@ SELECT * FROM entries;
 ```
 
 
-## Cerating synthetic pub/sub messages for the simulation
+## 1 Cerating synthetic pub/sub messages for the simulation
 
 This google provided template is used to create fake data.
 
@@ -235,8 +261,9 @@ https://cloud.google.com/pubsub/docs/monitoring#maintain_a_healthy_subscription
 
 https://cloud.google.com/pubsub/docs/monitor-subscription
 
+## 3. Dataproc
 
-## PySpark to read from & write to files on GCS
+### 3.1 PySpark to read from & write to files on GCS
 
 ```sh
 gcloud dataproc clusters create ${DEMO_NAME}-1 \
@@ -262,7 +289,60 @@ gcloud dataproc jobs submit pyspark dataset_read_json_from_gcs.py \
     --region=${GCP_REGION}
 ```
 
-## PySpark to read from & write to MySQL deployed on CloudSQL
+### 3.2 PySpark to read from & write to MySQL deployed on CloudSQL
+
+Download the jdbc driver JAR 
+
+https://dev.mysql.com/doc/connector-j/8.1/en/
+
+https://mvnrepository.com/artifact/com.mysql/mysql-connector-j/8.1.0
+
+Upload it to GCS
+
+```sh
+gcloud storage cp mysql-connector-j-8.1.0.jar ${GCS_BUCKET}
+```
+
+Download the Cloud SQL Java Connector JAR (for use with JDBC)
+
+https://github.com/GoogleCloudPlatform/cloud-sql-jdbc-socket-factory/blob/main/docs/jdbc-mysql.md
+
+https://mvnrepository.com/artifact/com.google.cloud.sql/mysql-socket-factory/1.13.1
+
+Upload it to GCS
+
+```sh
+gcloud storage cp mysql-socket-factory-1.13.1.jar ${GCS_BUCKET}
+```
+
+Build the full JCBD [URL](https://github.com/GoogleCloudPlatform/cloud-sql-jdbc-socket-factory/blob/main/docs/jdbc-mysql.md#creating-thejdbc-url)
+
+```
+jdbc:mysql:///<DATABASE_NAME>?cloudSqlInstance=<INSTANCE_CONNECTION_NAME>&socketFactory=com.google.cloud.sql.mysql.SocketFactory&user=<MYSQL_USER_NAME>&password=<MYSQL_USER_PASSWORD>
+
+```
+
+
+
+Use it in the launch of a dataproc jobs
+
+```sh
+gcloud dataproc jobs submit pyspark dataset_read_from_cloudsql_mysql.py \
+    --cluster=${DEMO_NAME}-2 \
+    --region=${GCP_REGION} \
+    --jars=${JDBC_JAR},${CSQL_JAR}
+```
+
+Use it in the launch of a dataproc jobs (ON LEON'S PROJECT)
+
+```sh
+gcloud dataproc jobs submit pyspark dataset_read_from_cloudsql_mysql.py \
+    --cluster=dataproc-cloudsql-cluster \
+    --region=europe-west2 \
+    --jars=${JDBC_JAR},${CSQL_JAR}
+```
+
+
 
 https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/cloud-sql-proxy#using-this-initialization-action-without-configuring-hive-metastore
 
@@ -275,20 +355,28 @@ gcloud dataproc clusters create ${DEMO_NAME}-2 \
     --metadata "additional-cloud-sql-instances=${GCP_PROJECT_ID}:${GCP_REGION}:${DEMO_NAME}"
 ```
 
-```sh
-gcloud dataproc jobs submit pyspark dataset_read_from_cloudsql_mysql.py \
-    --cluster=${DEMO_NAME}-2 \
-    --region=${GCP_REGION}
-```
 
-## Cloud Composer - trigger every 5 mins
+
+## 4 Cloud Composer
+
+### 4.1 Cloud Composer - trigger every 5 mins
 
 TODO
 
-## Cloud Composer - determine files on GCS to input based on current wall-clock-time
+### 4.2 Cloud Composer - determine files on GCS to input based on current wall-clock-time
 
 TODO
 
-## Cloud Composer - launch PySpark job with custom input
+### 4.3 Cloud Composer - launch PySpark job with custom input
 
 TODO
+
+### 5 BigQuery
+
+## 5 BigQuery  - monitoring jobs by inspecting jsonl files on GCS
+
+setup a BigQuery BigLake table for the JSON files stored on GCS
+
+https://cloud.google.com/bigquery/docs/create-cloud-storage-table-biglake
+
+query this BigLake table to answer if a given YYYY/MM/DD/hh/mm/ combo had orders
