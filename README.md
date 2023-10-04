@@ -1,8 +1,22 @@
 # demo-dataproc-pipeline
 
-## 0 GCP Infra creation
+![arch_diagram](images/demo_dataproc_arch_v2.png)
 
-### 0.0 check gcloud is on the right project
+table of contents: 
+
+  0. [Common GCP Components](#0-common-gcp-components) 
+  1. [Dataflow](#1-dataflow---cerating-synthetic-pubsub-messages-for-the-simulation)
+  2. [Pub/Sub](#2-pubsub---queue-of-messages-to-process)
+  3. [GCS Storage](#3-gcs---batching-of-pubsub-messages-into-files)
+  4. [CloudSQL](#4---cloudsql-instance-creation)
+  5. [Dataproc](#5-dataproc)
+  6. [Composer](#6-cloud-composer)
+  7. [GCS Presentation](#7-gcs---presentation-layer-with-pipeline-output)
+  8. [BigQuery](#8-bigquery)
+
+## 0 Common GCP Components
+
+### 0.1 check gcloud is on the right project
 
 ```sh
 gcloud config configurations list
@@ -12,55 +26,35 @@ gcloud config configurations list
 gcloud config configurations activate ${name_of_config}
 ```
 
-### 0.1 Environmetal variables
+### 0.2 Environmetal variables
 
 To help build GCP infra, Create some evironmental variables as follows.
 
 ```sh
 export GCP_PROJECT_ID=$(gcloud config list core/project --format="value(core.project)")
-
 export GCP_PROJECT_NUM=$(gcloud projects describe $GCP_PROJECT_ID --format="value(projectNumber)")
-
 export GCP_REGION="europe-west2"
-
 export DEMO_NAME=demo-dataproc-pipeline
-
 export GCS_BUCKET=gs://${GCP_PROJECT_ID}-${DEMO_NAME}
-
 export GCS_BUCKET_NO_PREFIX=${GCP_PROJECT_ID}-${DEMO_NAME}
-
 export PUB_SUB_TOPIC=projects/${GCP_PROJECT_ID}/topics/${DEMO_NAME}
-
 export DEBUG_PUB_SUB_SUBSCRIPTION=demodataprocpipelinedebug
-
 export DEBUG_SUBSCRIPTION_ID=projects/${GCP_PROJECT_ID}/subscriptions/${DEBUG_PUB_SUB_SUBSCRIPTION}
-
 export GCS_PUB_SUB_SUBSCRIPTION=demodataprocpipelinegcs
-
 export GCS_SUBSCRIPTION_ID=projects/${GCP_PROJECT_ID}/subscriptions/${GCS_PUB_SUB_SUBSCRIPTION}
-
 export EMAIL_ADDRESS=alazzaro@google.com
-
 export TS_FORMAT=%Y-%m-%dT%H:%M:%SZ
-
 export PUB_SUB_SA="service-${GCP_PROJECT_NUM}@gcp-sa-pubsub.iam.gserviceaccount.com"
-
 export MYSQL_MVN_GROUP_ID="mysql"
-
 export MYSQL_MVN_ARTIFACT="mysql-connector-java"
-
 export MYSQL_MVN_VERSION="8.0.32"
-
 export JDBC_JAR="gs://python-lab-329118-demo-dataproc-pipeline/mysql-connector-j-8.1.0.jar"
-
 export CSQL_JAR="gs://python-lab-329118-demo-dataproc-pipeline/mysql-socket-factory-1.13.1.jar"
-
 export DB_USER="anthony"
-
 export DB_PASS="p#EQN65z\E(:,sv:"
 ```
 
-### 0.2 enable GCP product apis
+### 0.3 enable GCP product apis
 
 check which apis are currently enabled for your project by running
 
@@ -76,16 +70,67 @@ gcloud services enable compute.googleapis.com
 gcloud services enable storage-component.googleapis.com
 ```
 
+## 1 Dataflow - Cerating synthetic pub/sub messages for the simulation
 
-### 0.3 create pubsub topic
+This google provided template is used to create fake data.
 
-Our pipeline starts with a stream of messages in pub/sub so let's create a topic.
+https://cloud.google.com/dataflow/docs/guides/templates/provided/streaming-data-generator#gcloud
+
+As we are generating pub/sub messages a JSON schema needs to be provided.
+
+```js
+{"id": {{integer(0,1000)}},"name": "{{uuid()}}","isInStock": {{bool()}}}
+```
+
+Note how the JSON is all one 1 line, this is so when we batch messages together in
+a single file we can have a file in [jsonlines](https://jsonlines.org/) format
+
+Next upload our JSON schema into the GCS bucket
+
+```sh
+gcloud storage cp synth_data_schema.json ${GCS_BUCKET}
+```
+with the schema uploaded to gcs, a template can be kicked off later to generate data.
+
+```sh
+gcloud dataflow flex-template run demo-dataproc-gen-synth-pubsub-msgs \
+    --project=${GCP_PROJECT_ID} \
+    --region=${GCP_REGION} \
+    --template-file-gcs-location=gs://dataflow-templates-${GCP_REGION}/latest/flex/Streaming_Data_Generator \
+    --parameters \
+sinkType=PUBSUB,\
+topic=${PUB_SUB_TOPIC},\
+schemaLocation=${GCS_BUCKET}/synth_data_schema.json,\
+outputType=JSON,\
+qps=5,\
+messagesLimit=100
+```
+
+## 2 Pub/Sub - queue of messages to process
+
+create a topic.
 
 ```sh
 gcloud pubsub topics create ${PUB_SUB_TOPIC}
 ```
 
-### 0.4 create gcs bucket
+Create a subscription to this topic for debugging purposes
+```sh
+gcloud pubsub subscriptions create ${DEBUG_PUB_SUB_SUBSCRIPTION} \
+--topic=${PUB_SUB_TOPIC} \
+--retain-acked-messages
+```
+
+Check that pub/sub messages were create successfully by dataflow template.
+N.B. This command will pull messages without acknowledgement.
+
+```sh
+gcloud pubsub subscriptions pull ${DEBUG_PUB_SUB_SUBSCRIPTION} \
+--format=json \
+--limit=10
+```
+
+## 3 GCS - batching of Pub/Sub messages into files
 
 These pub/sub messages will be batched into files on GCS, so let's create a bucket.
 
@@ -95,17 +140,6 @@ gcloud storage buckets create ${GCS_BUCKET} \
   --location=${GCP_REGION} \
   --uniform-bucket-level-access
 ```
-
-### 0.5 create pubsub debug subscription
-
-Create a subscription to this topic for debugging purposes
-```sh
-gcloud pubsub subscriptions create ${DEBUG_PUB_SUB_SUBSCRIPTION} \
---topic=${PUB_SUB_TOPIC} \
---retain-acked-messages
-```
-
-### 0.6 pubsub cloud storage subscription
 
 Create a Cloud Storage [subscription](https://cloud.google.com/pubsub/docs/create-cloudstorage-subscription#pubsub_create_cloudstorage_subscription-gcloud)
 to consume pub/sub messages, batch them & write their contents as files on GCS.
@@ -142,26 +176,24 @@ gcloud pubsub subscriptions create ${GCS_PUB_SUB_SUBSCRIPTION} \
 --cloud-storage-write-metadata
 ```
 
-### 0.7 dataproc cluster creation
+check bacthing of pub/sub messages & writing of files to GCS
 
 ```sh
-gcloud dataproc clusters create ${DEMO_NAME} \
-    --project=${GCP_PROJECT_ID} \
-    --region=${GCP_REGION} \
-    --single-node
+gcloud storage ls ${GCS_BUCKET}
 ```
 
-### 0.8 authentication
+Use cloud monitoring to measure the progress of the cloud storage subscription
 
-Next create authentication details for your Google account
+https://cloud.google.com/pubsub/docs/monitoring#maintain_a_healthy_subscription
 
-```sh
-gcloud auth application-default login
-```
+Use pub/sub UI to measure progress of cloud storage subscription
 
-### 0.9 cloudsql instance creation
+https://cloud.google.com/pubsub/docs/monitor-subscription
 
-https://cloud.google.com/sql/docs/mysql/create-instance#gcloud
+
+## 4 - Cloudsql instance creation
+
+Create a MySQL DB on a CloudSQL instance as per [docs](https://cloud.google.com/sql/docs/mysql/create-instance#gcloud)
 
 ```sh
 gcloud sql instances create ${DEMO_NAME} \
@@ -199,78 +231,23 @@ check the newly created data is in the table
 SELECT * FROM entries;
 ```
 
+## 5. Dataproc
 
-## 1 Cerating synthetic pub/sub messages for the simulation
+### 5.1 cluster creation
 
-This google provided template is used to create fake data.
-
-https://cloud.google.com/dataflow/docs/guides/templates/provided/streaming-data-generator#gcloud
-
-As we are generating pub/sub messages a JSON schema needs to be provided.
-
-```js
-{"id": {{integer(0,1000)}},"name": "{{uuid()}}","isInStock": {{bool()}}}
-```
-
-Note how the JSON is all one 1 line, this is so when we batch messages together in
-a single file we can have a file in (jsonlines)[https://jsonlines.org/] format
-
-Next upload our JSON schema into the GCS bucket
+Create a dataproc cluster with (cloud-sql-proxy)[https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/cloud-sql-proxy#using-this-initialization-action-without-configuring-hive-metastore] 
+installed on all Dataproc worker nodes
 
 ```sh
-gcloud storage cp synth_data_schema.json ${GCS_BUCKET}
-```
-with the schema uploaded to gcs, a template can be kicked off later to generate data.
-
-```sh
-gcloud dataflow flex-template run demo-dataproc-gen-synth-pubsub-msgs \
-    --project=${GCP_PROJECT_ID} \
-    --region=${GCP_REGION} \
-    --template-file-gcs-location=gs://dataflow-templates-${GCP_REGION}/latest/flex/Streaming_Data_Generator \
-    --parameters \
-sinkType=PUBSUB,\
-topic=${PUB_SUB_TOPIC},\
-schemaLocation=${GCS_BUCKET}/synth_data_schema.json,\
-outputType=JSON,\
-qps=5,\
-messagesLimit=100
+gcloud dataproc clusters create ${DEMO_NAME}-2 \
+    --region ${GCP_REGION} \
+    --scopes sql-admin \
+    --initialization-actions gs://goog-dataproc-initialization-actions-${GCP_REGION}/cloud-sql-proxy/cloud-sql-proxy.sh \
+    --metadata "enable-cloud-sql-hive-metastore=false" \
+    --metadata "additional-cloud-sql-instances=${GCP_PROJECT_ID}:${GCP_REGION}:${DEMO_NAME}"
 ```
 
-## Check pub/sub message creation
-
-Check that pub/sub messages were create successfully.
-N.B. This command will pull messages without acknowledgement.
-
-```sh
-gcloud pubsub subscriptions pull ${DEBUG_PUB_SUB_SUBSCRIPTION} \
---format=json \
---limit=10
-```
-
-## check bacthing of pub/sub messages & writing of files to GCS
-
-```sh
-gcloud storage ls ${GCS_BUCKET}
-```
-
-## Use cloud monitoring to measure the progress of the cloud storage subscription
-
-https://cloud.google.com/pubsub/docs/monitoring#maintain_a_healthy_subscription
-
-## Use pub/sub UI to measure progress of cloud storage subscription
-
-https://cloud.google.com/pubsub/docs/monitor-subscription
-
-## 3. Dataproc
-
-### 3.1 PySpark to read from & write to files on GCS
-
-```sh
-gcloud dataproc clusters create ${DEMO_NAME}-1 \
-    --project=${GCP_PROJECT_ID} \
-    --region=${GCP_REGION} \
-    --single-node
-```
+### 5.2 pyspark GCS
 
 Using legacy RDD programming API
 
@@ -289,7 +266,7 @@ gcloud dataproc jobs submit pyspark dataset_read_json_from_gcs.py \
     --region=${GCP_REGION}
 ```
 
-### 3.2 PySpark to read from & write to MySQL deployed on CloudSQL
+### 5.3 pyspark MySQL
 
 Download the jdbc driver JAR 
 
@@ -303,77 +280,37 @@ Upload it to GCS
 gcloud storage cp mysql-connector-j-8.1.0.jar ${GCS_BUCKET}
 ```
 
-Download the Cloud SQL Java Connector JAR (for use with JDBC)
-
-https://github.com/GoogleCloudPlatform/cloud-sql-jdbc-socket-factory/blob/main/docs/jdbc-mysql.md
-
-https://mvnrepository.com/artifact/com.google.cloud.sql/mysql-socket-factory/1.13.1
-
-Upload it to GCS
-
-```sh
-gcloud storage cp mysql-socket-factory-1.13.1.jar ${GCS_BUCKET}
-```
-
-Build the full JCBD [URL](https://github.com/GoogleCloudPlatform/cloud-sql-jdbc-socket-factory/blob/main/docs/jdbc-mysql.md#creating-thejdbc-url)
-
-```
-jdbc:mysql:///<DATABASE_NAME>?cloudSqlInstance=<INSTANCE_CONNECTION_NAME>&socketFactory=com.google.cloud.sql.mysql.SocketFactory&user=<MYSQL_USER_NAME>&password=<MYSQL_USER_PASSWORD>
-
-```
-
-
-
 Use it in the launch of a dataproc jobs
 
 ```sh
 gcloud dataproc jobs submit pyspark dataset_read_from_cloudsql_mysql.py \
     --cluster=${DEMO_NAME}-2 \
     --region=${GCP_REGION} \
-    --jars=${JDBC_JAR},${CSQL_JAR}
+    --jars=${JDBC_JAR}
 ```
 
-Use it in the launch of a dataproc jobs (ON LEON'S PROJECT)
+## 6 Cloud Composer
+
+trigger every 5 mins
+
+determine files on GCS to input based on current wall-clock-time
+
+launch PySpark job with custom input
+
+## 7 GCS - presentation layer with pipeline output
+
+Output of PySpark pipeline is on GCS, let's create a bucket of it.
 
 ```sh
-gcloud dataproc jobs submit pyspark dataset_read_from_cloudsql_mysql.py \
-    --cluster=dataproc-cloudsql-cluster \
-    --region=europe-west2 \
-    --jars=${JDBC_JAR},${CSQL_JAR}
+gcloud storage buckets create \
+  --project=${GCP_PROJECT_ID} \
+  --location=${GCP_REGION} \
+  --uniform-bucket-level-access
 ```
 
+### 8 BigQuery
 
-
-https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/cloud-sql-proxy#using-this-initialization-action-without-configuring-hive-metastore
-
-```sh
-gcloud dataproc clusters create ${DEMO_NAME}-2 \
-    --region ${GCP_REGION} \
-    --scopes sql-admin \
-    --initialization-actions gs://goog-dataproc-initialization-actions-${GCP_REGION}/cloud-sql-proxy/cloud-sql-proxy.sh \
-    --metadata "enable-cloud-sql-hive-metastore=false" \
-    --metadata "additional-cloud-sql-instances=${GCP_PROJECT_ID}:${GCP_REGION}:${DEMO_NAME}"
-```
-
-
-
-## 4 Cloud Composer
-
-### 4.1 Cloud Composer - trigger every 5 mins
-
-TODO
-
-### 4.2 Cloud Composer - determine files on GCS to input based on current wall-clock-time
-
-TODO
-
-### 4.3 Cloud Composer - launch PySpark job with custom input
-
-TODO
-
-### 5 BigQuery
-
-## 5 BigQuery  - monitoring jobs by inspecting jsonl files on GCS
+Use BigQuery to monitor the files produed by the pipeline at various stages.
 
 setup a BigQuery BigLake table for the JSON files stored on GCS
 
