@@ -37,11 +37,11 @@ export GCP_REGION="europe-west2"
 export DEMO_NAME=demo-dataproc-pipeline
 export GCS_BUCKET=gs://${GCP_PROJECT_ID}-${DEMO_NAME}
 export GCS_BUCKET_NO_PREFIX=${GCP_PROJECT_ID}-${DEMO_NAME}
+export GCS_SUBSCRIPTION_ID=projects/${GCP_PROJECT_ID}/subscriptions/${GCS_PUB_SUB_SUBSCRIPTION}
 export PUB_SUB_TOPIC=projects/${GCP_PROJECT_ID}/topics/${DEMO_NAME}
 export DEBUG_PUB_SUB_SUBSCRIPTION=demodataprocpipelinedebug
 export DEBUG_SUBSCRIPTION_ID=projects/${GCP_PROJECT_ID}/subscriptions/${DEBUG_PUB_SUB_SUBSCRIPTION}
 export GCS_PUB_SUB_SUBSCRIPTION=demodataprocpipelinegcs
-export GCS_SUBSCRIPTION_ID=projects/${GCP_PROJECT_ID}/subscriptions/${GCS_PUB_SUB_SUBSCRIPTION}
 export EMAIL_ADDRESS=alazzaro@google.com
 export TS_FORMAT=%Y-%m-%dT%H:%M:%SZ
 export PUB_SUB_SA="service-${GCP_PROJECT_NUM}@gcp-sa-pubsub.iam.gserviceaccount.com"
@@ -52,6 +52,7 @@ export JDBC_JAR="gs://python-lab-329118-demo-dataproc-pipeline/mysql-connector-j
 export CSQL_JAR="gs://python-lab-329118-demo-dataproc-pipeline/mysql-socket-factory-1.13.1.jar"
 export DB_USER="anthony"
 export DB_PASS="p#EQN65z\E(:,sv:"
+export COMPOSER_IMAGE_VERSION="composer-2.4.4-airflow-2.5.3"
 ```
 
 ### 0.3 enable GCP product apis
@@ -68,6 +69,7 @@ If required, enable the dataproc, compute engine & cloud storage APIs
 gcloud services enable dataproc.googleapis.com
 gcloud services enable compute.googleapis.com
 gcloud services enable storage-component.googleapis.com
+gcloud services enable composer.googleapis.com
 ```
 
 ## 1 Dataflow - Cerating synthetic pub/sub messages for the simulation
@@ -284,18 +286,43 @@ Use it in the launch of a dataproc jobs
 
 ```sh
 gcloud dataproc jobs submit pyspark dataset_read_from_cloudsql_mysql.py \
-    --cluster=${DEMO_NAME}-2 \
-    --region=${GCP_REGION} \
+    --cluster=dataproc-cloudsql-cluster-1 \
+    --region=europe-west2 \
     --jars=${JDBC_JAR}
 ```
 
 ## 6 Cloud Composer
 
-trigger every 5 mins
+Create a cloud composer 2 environment, by following [docs](https://cloud.google.com/composer/docs/composer-2/run-apache-airflow-dag)
 
-determine files on GCS to input based on current wall-clock-time
+Add Cloud Composer Service Agent account as a new principal on your environment's 
+service account (the project's default compute service account to) and grant the 
+Cloud Composer v2 API Service Agent Extension (roles/composer.ServiceAgentV2Ext) 
+role to it.
 
-launch PySpark job with custom input
+```sh
+gcloud iam service-accounts add-iam-policy-binding \
+    ${GCP_PROJECT_NUM}-compute@developer.gserviceaccount.com \
+    --member serviceAccount:service-${GCP_PROJECT_NUM}@cloudcomposer-accounts.iam.gserviceaccount.com \
+    --role roles/composer.ServiceAgentV2Ext
+```
+
+Actually create the cloud composer environment
+
+```sh
+gcloud composer environments create ${DEMO_NAME} \
+  --location ${GCP_REGION} \
+  --image-version ${COMPOSER_IMAGE_VERSION}
+```
+
+Upload Airflow DAG to cloud storage
+
+```sh
+gcloud composer environments storage dags import \
+--environment ${DEMO_NAME} \
+--location ${GCP_REGION} \
+--source dataproc_orchestrator.py
+```
 
 ## 7 GCS - presentation layer with pipeline output
 
