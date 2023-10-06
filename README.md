@@ -315,6 +315,15 @@ gcloud composer environments create ${DEMO_NAME} \
   --image-version ${COMPOSER_IMAGE_VERSION}
 ```
 
+View perinstalled python packages in the composer environment. [docs](https://cloud.google.com/composer/docs/composer-2/install-python-dependencies#view-packages)
+
+```sh
+gcloud beta composer environments list-packages \
+   ${DEMO_NAME} \
+    --location ${GCP_REGION}
+```
+
+
 Upload Airflow DAG to cloud storage
 
 ```sh
