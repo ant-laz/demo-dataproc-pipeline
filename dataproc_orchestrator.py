@@ -1,3 +1,17 @@
+# Copyright 2024 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from airflow.decorators import dag, task
 from airflow.operators.python import PythonOperator
 from airflow.providers.google.cloud.operators.gcs import GCSListObjectsOperator
@@ -10,12 +24,12 @@ import datetime
         # define how often the scheduler triggers this DAG. expects cron expression.
         schedule="@daily",
         # allow filtering DAGs on the Airflow UI
-        tags=["shikhar"],
+        tags=["tag_for_my_pipeline"],
         # avoid running non-triggered DAG runs bewteen last execution & current date
         catchup=False,
 )
 # function name is the unique ID of this DAG
-def shikhar_etl():
+def my_pipeline_etl():
 
     # This operator returns a python list with the name of objects 
     # This can be used via XCom in the downstream task.
@@ -24,9 +38,7 @@ def shikhar_etl():
     # later airflow tasks to processes these files on Dataproc
     files_on_gcs = GCSListObjectsOperator(
         task_id='find_files_on_GCS',
-        # example file:
-        # gs://python-lab-329118-demo-dataproc-pipeline/shikharorder2023-09-27T22:35:15+00:00_07a589.jsonl
-        bucket='python-lab-329118-demo-dataproc-pipeline',
+        bucket='YOUR_BUCKET',
         match_glob='*.jsonl',
         # Cloud Composer configures default connections in your environment. 
         # Can use these connections to access resources without configuring them.
@@ -56,4 +68,4 @@ def shikhar_etl():
     files_on_gcs >> process_files
 
 # execute the DAG by calling the decorated function
-shikhar_etl()
+my_pipeline_etl()

@@ -42,7 +42,7 @@ export PUB_SUB_TOPIC=projects/${GCP_PROJECT_ID}/topics/${DEMO_NAME}
 export DEBUG_PUB_SUB_SUBSCRIPTION=demodataprocpipelinedebug
 export DEBUG_SUBSCRIPTION_ID=projects/${GCP_PROJECT_ID}/subscriptions/${DEBUG_PUB_SUB_SUBSCRIPTION}
 export GCS_PUB_SUB_SUBSCRIPTION=demodataprocpipelinegcs
-export EMAIL_ADDRESS=alazzaro@google.com
+export EMAIL_ADDRESS="YOU@DOMAIN.COM"
 export TS_FORMAT=%Y-%m-%dT%H:%M:%SZ
 export PUB_SUB_SA="service-${GCP_PROJECT_NUM}@gcp-sa-pubsub.iam.gserviceaccount.com"
 export MYSQL_MVN_GROUP_ID="mysql"
@@ -50,8 +50,8 @@ export MYSQL_MVN_ARTIFACT="mysql-connector-java"
 export MYSQL_MVN_VERSION="8.0.32"
 export JDBC_JAR="gs://python-lab-329118-demo-dataproc-pipeline/mysql-connector-j-8.1.0.jar"
 export CSQL_JAR="gs://python-lab-329118-demo-dataproc-pipeline/mysql-socket-factory-1.13.1.jar"
-export DB_USER="anthony"
-export DB_PASS="p#EQN65z\E(:,sv:"
+export DB_USER="YOUR_USERNAME"
+export DB_PASS="YOUR_PASSWORD"
 export COMPOSER_IMAGE_VERSION="composer-2.4.4-airflow-2.5.3"
 ```
 
@@ -171,7 +171,7 @@ Finally, execute this command to create the Cloud Storage Subscription.
 gcloud pubsub subscriptions create ${GCS_PUB_SUB_SUBSCRIPTION} \
 --topic=${PUB_SUB_TOPIC} \
 --cloud-storage-bucket=${GCS_BUCKET_NO_PREFIX} \
---cloud-storage-file-prefix=shikharorder \
+--cloud-storage-file-prefix=YOUR_FILE_PREFIX \
 --cloud-storage-file-suffix=.jsonl \
 --cloud-storage-max-duration=5m \
 --cloud-storage-output-format=text \
